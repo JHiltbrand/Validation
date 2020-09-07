@@ -5,3 +5,5 @@ ntuple_maker_def.py
 submit_run_def.py
 **Run**
 **condor
+**.swp
+**.root
