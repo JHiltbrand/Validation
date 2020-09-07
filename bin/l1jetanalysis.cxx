@@ -33,31 +33,45 @@ Optionally, if you want to rescale to a given instantaneous luminosity:
 nb: for 2&3 I have provided the info in runInfoForRates.txt
 */
 
-void jetanalysis(bool newConditions, const std::string& inputFileDirectory);
+void jetanalysis(bool isData, bool newConditions, const std::string& unique, const std::string& inputFileDirectory);
 
 int main(int argc, char *argv[])
 {
     bool newConditions = true;
     std::string ntuplePath("");
+    std::string unique("");
+    bool isData = true;
 
-    if (argc != 3) {
-        std::cout << "Usage: l1jetanalysis.exe [new/def] [path to ntuples]\n"
-              << "[new/def] indicates new or default (existing) conditions" << std::endl;
-        exit(1);
+    if (argc <= 3) {
+      std::cout << "Usage: l1jetanalysis.exe [mc/data] [new/def] [path to ntuples] [unique tag]\n"
+            << "[mc/data] indicates running on mc or data\n"
+            << "[new/def] indicates new or default (existing) conditions" << std::endl;
+      exit(1);
     }
     else {
-        std::string par1(argv[1]);
-        std::transform(par1.begin(), par1.end(), par1.begin(), ::tolower);
-        if(par1.compare("new") == 0) newConditions = true;
-        else if(par1.compare("def") == 0) newConditions = false;
-        else {
-            std::cout << "First parameter must be \"new\" or \"def\"" << std::endl;
-            exit(1);
-        }
-      ntuplePath = argv[2];
+      std::string par1(argv[2]);
+      std::transform(par1.begin(), par1.end(), par1.begin(), ::tolower);
+      if(par1.compare("new") == 0) newConditions = true;
+      else if(par1.compare("def") == 0) newConditions = false;
+      else {
+        std::cout << "First parameter must be \"new\" or \"def\"" << std::endl;
+        exit(1);
+      }
+
+      std::string par2(argv[1]);
+      std::transform(par2.begin(), par2.end(), par2.begin(), ::tolower);
+      if(par2.compare("mc") == 0) isData = false;
+      else if(par2.compare("data") == 0) isData = true;
+      else {
+        std::cout << "First parameter must be \"mc\" or \"data\"" << std::endl;
+        exit(1);
+      }
+
+      ntuplePath = argv[3];
+      if (argc == 5) unique = argv[4];
     }
 
-    jetanalysis(newConditions, ntuplePath);
+    jetanalysis(isData, newConditions, unique, ntuplePath);
 
     return 0;
 }
@@ -88,12 +102,11 @@ double deltaR(double eta1, double phi1, double eta2, double phi2) {
     return sqrt(deta*deta + dphi*dphi);
 }
 
-void jetanalysis(bool newConditions, const std::string& inputFileDirectory){
+void jetanalysis(bool isData, bool newConditions, const std::string& unique, const std::string& inputFileDirectory){
   
     bool hwOn = true;   //are we using data from hardware? (upgrade trigger had to be running!!!)
     bool emuOn = true;  //are we using data from emulator?
     //for efficiencies & resolutions:
-    bool recoOn = true; //are we using reco quantities? 
     
     if (hwOn==false && emuOn==false){
         std::cout << "exiting as neither hardware or emulator selected" << std::endl;
@@ -101,10 +114,15 @@ void jetanalysis(bool newConditions, const std::string& inputFileDirectory){
     }
 
     std::string inputFile(inputFileDirectory);
-    inputFile += "/L1Ntuple_*.root";
+    inputFile += "/L1Ntuple_"; inputFile += unique; inputFile += "*.root";
     std::string outputDirectory = "emu";  //***runNumber, triggerType, version, hw/emu/both***MAKE SURE IT EXISTS
-    std::string outputFilename = "l1analysis_def.root";
-    if(newConditions) outputFilename = "l1analysis_new_cond.root";
+    std::string outputFilename = "l1analysis_def"; outputFilename += unique; outputFilename += ".root";
+    if (newConditions) {
+        outputFilename = "l1analysis_new_cond";
+        outputFilename += unique;
+        outputFilename += ".root";
+    }
+
     TFile* kk = TFile::Open( outputFilename.c_str() , "recreate");
     // if (kk!=0){
     //   cout << "TERMINATE: not going to overwrite file " << outputFilename << endl;
@@ -125,11 +143,19 @@ void jetanalysis(bool newConditions, const std::string& inputFileDirectory){
     TChain * eventTree = new TChain("l1EventTree/L1EventTree");
     eventTree->Add(inputFile.c_str());
 
+    // In case you want to include PU info
+    TChain * vtxTree = new TChain("l1RecoTree/RecoTree");
+    int code = vtxTree->Add(inputFile.c_str());
+
+    bool useReco = false;
+    if (code != 0) useReco = true;
+    else std::cout << "Will not be using RecoTree for vertex info!" << std::endl;
+
     // In case you want to include RECO info
     TChain * recoTree = new TChain("l1JetRecoTree/JetRecoTree");
     TChain * metfilterTree = new TChain("l1MetFilterRecoTree/MetFilterRecoTree");
     TChain * muonTree = new TChain("l1MuonRecoTree/Muon2RecoTree");
-    if (recoOn) {
+    if (useReco) {
         recoTree->Add(inputFile.c_str());
         metfilterTree->Add(inputFile.c_str());
         muonTree->Add(inputFile.c_str());
@@ -151,6 +177,9 @@ void jetanalysis(bool newConditions, const std::string& inputFileDirectory){
     treeL1hw->SetBranchAddress("L1Upgrade", &l1hw_);
     L1Analysis::L1AnalysisEventDataFormat    *event_ = new L1Analysis::L1AnalysisEventDataFormat();
     eventTree->SetBranchAddress("Event", &event_);
+
+    L1Analysis::L1AnalysisRecoVertexDataFormat    *vtx_ = new L1Analysis::L1AnalysisRecoVertexDataFormat();
+    if (useReco) vtxTree->SetBranchAddress("Vertex", &vtx_);
 
     L1Analysis::L1AnalysisRecoJetDataFormat    *jet_ = new L1Analysis::L1AnalysisRecoJetDataFormat();
     recoTree->SetBranchAddress("Jet", &jet_);
@@ -356,8 +385,35 @@ void jetanalysis(bool newConditions, const std::string& inputFileDirectory){
     /////////////////////////////////
     // loop through all the entries//
     /////////////////////////////////
+    std::map<int, std::map<int, bool> > dupeMap; 
+    int theLumi = -1; int theRun = -1; bool skipLumi = false;
     for (Long64_t jentry=0; jentry<nentries; jentry++){
         if((jentry%10000)==0) std::cout << "Done " << jentry  << " events of " << nentries << std::endl;
+
+        // Do some nonsense to avoid processing the same lumi twice
+        int Lumi = event_->lumi; int Run  = event_->run;
+        if (Lumi != theLumi or Run != theRun) {
+            if (dupeMap.find(Run) != dupeMap.end()) {
+                if (dupeMap[Run].find(Lumi) != dupeMap[Run].end()) {
+                    // We have already processed this lumi/run
+                    skipLumi = true;
+                    theLumi = Lumi; theRun = Run;
+                    dupeMap[Run][Lumi] = true;
+                    std::cout << "ALREADY PROCESSED RUN " << Run << " LUMI " << Lumi << std::endl;
+                    continue;
+                } else {
+                    skipLumi = false;
+                    theLumi = Lumi; theRun = Run;
+                    dupeMap[Run][Lumi] = true;
+                }
+            } else {
+                skipLumi = false;
+                theLumi = Lumi; theRun = Run;
+                dupeMap[Run][Lumi] = true;
+            }
+        } else if (skipLumi) {
+            continue;
+        }
 
         //lumi break clause
         eventTree->GetEntry(jentry);
@@ -365,11 +421,10 @@ void jetanalysis(bool newConditions, const std::string& inputFileDirectory){
         if (!isGoodLumiSection(event_->lumi)) continue;
         goodLumiEventCount++;
 
-        int nPV = event_->nPV_True;
-
         // Check for at least one iso muon in the event.
         bool isoMu = false;
-        if (recoOn) {
+        if (useReco) {
+            vtxTree->GetEntry(jentry);
             muonTree->GetEntry(jentry);
             for(unsigned int i = 0; i < muon_->nMuons; ++i)
             {
@@ -381,6 +436,10 @@ void jetanalysis(bool newConditions, const std::string& inputFileDirectory){
         }
 
         if (!isoMu) continue;
+
+        int nPV = 0;
+        if (isData or useReco) nPV = vtx_->nVtx;
+        else nPV = event_->nPV;
 
         //do routine for L1 emulator quantites
         if (emuOn){
@@ -442,24 +501,26 @@ void jetanalysis(bool newConditions, const std::string& inputFileDirectory){
             l1MHT->Fill(mhtSum, nPV);
         
             // stuff for efficiencies and resolution
-            if (recoOn) {
+            if (useReco) {
 
                 recoTree->GetEntry(jentry);
                 metfilterTree->GetEntry(jentry);
 
                 // apply recommended MET filters
-                //if (!metfilter_->muonBadTrackFilter) {
-                //    std::cout << "GETTING OWNED BY BAD TRACK FILTER" << std::endl;
-                //    continue;
-                //}
-                //if (!metfilter_->badPFMuonFilter) {
-                //     std::cout << "GETTING OWNED BY BAD PF FILTER" << std::endl;
-                //    continue;
-                //}
-                //if (!metfilter_->badChCandFilter) { 
-                //    std::cout << "GETTING OWNED BY BAD CHC FILTER" << std::endl;
-                //    continue;
-                //}
+                if (isData) {
+                    if (!metfilter_->muonBadTrackFilter) {
+                        std::cout << "GETTING OWNED BY BAD TRACK FILTER" << std::endl;
+                        continue;
+                    }
+                    if (!metfilter_->badPFMuonFilter) {
+                         std::cout << "GETTING OWNED BY BAD PF FILTER" << std::endl;
+                        continue;
+                    }
+                    if (!metfilter_->badChCandFilter) { 
+                        std::cout << "GETTING OWNED BY BAD CHC FILTER" << std::endl;
+                        continue;
+                    }
+                }
 
                 // met
                 float pfMET = met_->pfMetNoMu;
