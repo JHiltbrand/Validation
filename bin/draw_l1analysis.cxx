@@ -14,801 +14,457 @@
 #include <string>
 #include <vector>
 
-int main()
-{
-  // include comparisons between HW and data TPs
-  bool includeHW = false;
-  //int rebinFactor = 1;
-
-  setTDRStyle();
-  gROOT->ForceStyle();
-  
-  // default, then new conditions
-  std::vector<std::string> filenames = {"l1analysis_def.root", "l1analysis_new_cond.root"};
-  std::vector<std::string> l1Types = {"singleJet", "doubleJet", "tripleJet", "quadJet",
-					"htSum", "etSum", "metSum", "metHFSum"};
-  
-  std::vector<std::string> jetrefTypes = {"RefJet","RefmJet" };
-  std::map<std::string, std::vector<std::string> > jetTypes;
-  jetTypes["Incl"] = {"JetEt12","JetEt35","JetEt60","JetEt90","JetEt120","JetEt180"};
-  jetTypes["HB"]   = {"JetEt12","JetEt35","JetEt60","JetEt90","JetEt120","JetEt180"};
-  jetTypes["HE1"]  = {"JetEt12","JetEt35","JetEt60","JetEt90","JetEt120","JetEt180"};
-  jetTypes["HE2"]  = {"JetEt12","JetEt35","JetEt60","JetEt90","JetEt120","JetEt180"};
-  jetTypes["HE"]   = {"JetEt12","JetEt35","JetEt60","JetEt90","JetEt120","JetEt180"};
-
-  std::vector<std::string> sumrefTypesPF = {"RefMET_PF"};
-  std::vector<std::string> sumrefTypesCalo = {"RefMET_Calo"};
-  std::vector<std::string> sumTypesPF = {"MET50_PF","MET100_PF","MET120_PF","MET150_PF"};
-  std::vector<std::string> sumTypesCalo = {"MET50_Calo","MET100_Calo","MET120_Calo","MET150_Calo"};
-  // std::vector<std::string> resTypes = {"hresJet","hResMET"};
-  
-  std::vector<std::string> resTypes = {"hresJet1","hresJet2","hresJet3","hresJet4","hresJet5","hresJet6","hresJet7","hresJet8","hresJet9","hresJet10",
-				       "hresMET1","hresMET2","hresMET3","hresMET4","hresMET5","hresMET6","hresMET7","hresMET8","hresMET9","hresMET10"};
-
-  std::vector<std::string> puRangeNames = {"_lowPU", "_midPU", "_highPU", ""};
-
-  std::vector<std::vector<int> > puRanges = {{30,46}, {47,63}, {64,80}, {0,100}};
+class l1Plotter {
+public:
     
-  std::map<std::string, int> histColor;
-  histColor["singleJet"] = histColor["etSum"] = histColor["metSum"] = kRed;
-  histColor["doubleJet"] = histColor["htSum"] = histColor["metHFSum"] = kBlue;
-  histColor["tripleJet"] = kGreen;
-  histColor["quadJet"] = kBlack;
+    l1Plotter() {
 
-  histColor["hresJet"] = kBlack;
-  histColor["hResMET_Calo"] = histColor["hResMET_PF"] = kBlue;
+        for(auto file : filenames_) { files_.push_back(TFile::Open(file.c_str())); }
+    };
 
-  std::map<std::string, TH1D*> effHists_def;
-  std::map<std::string, TH1D*> effHists_new_cond;
-  std::map<std::string, TH1D*> effHists_hw;
-  std::map<std::string, TH1D*> effHistsRatio;
-  
-  std::vector<TFile*> files;
-  for(auto file : filenames) {
-    files.push_back(TFile::Open(file.c_str()));
-  }
-  for(auto l1Type : l1Types) {
-    std::string histName(l1Type);
-    std::string histNameHw(histName);
-    //  histName += "Effs_emu";
-    //  histNameHw += "Effs_hw";
-
-    TH2F* deftemp = dynamic_cast<TH2F*>(files.at(0)->Get(histName.c_str()));
-    TH2F* newtemp = dynamic_cast<TH2F*>(files.at(1)->Get(histName.c_str()));
-    for (unsigned int irange = 0; irange < puRanges.size(); irange++) {
-
-        std::string custom = puRangeNames[irange]; std::vector<int> bounds = puRanges[irange];
-
-        std::string newName = histName + custom;
-        int lowBin = deftemp->GetYaxis()->FindBin(bounds[0]); int hiBin = deftemp->GetYaxis()->FindBin(bounds[1]);
-
-        effHists_def[newName] = deftemp->ProjectionX((newName+"_def").c_str(), lowBin, hiBin, "");
-        //effHists_hw[l1Type] = dynamic_cast<TH1F*>(files.at(0)->Get(histNameHw.c_str()));
-        effHists_new_cond[newName] = newtemp->ProjectionX((newName+"_new").c_str(), lowBin, hiBin, "");
-        
-        effHists_def[newName]->Rebin(4);
-        // effHists_hw[l1Type]->Rebin(4);
-        effHists_new_cond[newName]->Rebin(4);
-
-        effHists_def[newName]->SetLineColor(histColor[l1Type]);
-        //effHists_hw[l1Type]->SetLineColor(histColor[l1Type]);
-        effHists_new_cond[newName]->SetLineColor(histColor[l1Type]);
-        TString name(effHists_new_cond[newName]->GetName());
-        name += "_ratio";
-        if(includeHW) {
-          //effHistsRatio[l1Type] = dynamic_cast<TH1F*>(effHists_def[l1Type]->Clone(name));
-          //effHistsRatio[l1Type]->Divide(effHists_hw[l1Type]);
+    void plotRes(std::string refName, std::string typeName, std::string xtitle, std::string region = "") {
+    
+        TF1 *fgaus = new TF1("g1","gaus");
+        fgaus->SetRange(-1.,1.);
+    
+        std::string histo2Dname = refName + region;
+        std::string histo1Dname_1 = histo2Dname + "_1"; std::string histo1Dname_yx_1 = histo2Dname + "_yx_1";
+        std::string histo1Dname_2 = histo2Dname + "_2"; std::string histo1Dname_yx_2 = histo2Dname + "_yx_2";
+    
+        std::string histo1Dname_1_new_cond = histo1Dname_1 + "_" + region + "_new_cond";
+        std::string histo1Dname_2_new_cond = histo1Dname_2 + "_" + region + "_new_cond";
+    
+        std::string histo1Dname_1_def = histo1Dname_1 + "_" + region + "_def";
+        std::string histo1Dname_2_def = histo1Dname_2 + "_" + region + "_def";
+    
+        std::string meanName, sigmaName;
+        if (region == "") {
+            meanName = "res" + typeName + "_mean";
+            sigmaName = "res" + typeName + "_sigma";
+        } else {
+            meanName = "res" + typeName + "_mean_" + region;
+            sigmaName = "res" + typeName + "_sigma_" + region;
         }
-        else {
-          effHistsRatio[newName] = dynamic_cast<TH1D*>(effHists_new_cond[newName]->Clone(name));
-          effHistsRatio[newName]->Divide(effHists_def[newName]);
+    
+        TH3F* deftemp = dynamic_cast<TH3F*>(files_.at(0)->Get(histo2Dname.c_str()));
+        TH3F* newtemp = dynamic_cast<TH3F*>(files_.at(1)->Get(histo2Dname.c_str()));
+    
+        for (unsigned int irange = 0; irange < puRanges_.size(); irange++) {
+    
+            std::string custom = puRangeNames_[irange]; std::vector<int> bounds = puRanges_[irange];
+            int lowBin = deftemp->GetZaxis()->FindBin(bounds[0]); int hiBin = deftemp->GetZaxis()->FindBin(bounds[1]);
+    
+            deftemp->GetZaxis()->SetRange(lowBin, hiBin); 
+            newtemp->GetZaxis()->SetRange(lowBin, hiBin);
+    
+            TH2D* resHistos2D_def = dynamic_cast<TH2D*>(deftemp->Project3D("yx")); resHistos2D_def->RebinX(10);
+            resHistos2D_def->FitSlicesY(fgaus);
+    
+            TH1D* resHistos1D_1_def = (TH1D*)gDirectory->Get((histo1Dname_yx_1).c_str()); resHistos1D_1_def->SetName((histo1Dname_1_def+custom).c_str());
+            TH1D* resHistos1D_2_def = (TH1D*)gDirectory->Get((histo1Dname_yx_2).c_str()); resHistos1D_2_def->SetName((histo1Dname_2_def+custom).c_str());
+    
+            gROOT->cd();
+    
+            TH2D* resHistos2D_new_cond = dynamic_cast<TH2D*>(newtemp->Project3D("yx")); resHistos2D_new_cond->RebinX(10);
+            resHistos2D_new_cond->FitSlicesY(fgaus);
+            TH1D* resHistos1D_1_new_cond = (TH1D*)gDirectory->Get((histo1Dname_yx_1).c_str()); resHistos1D_1_new_cond->SetName((histo1Dname_1_new_cond+custom).c_str());
+            TH1D* resHistos1D_2_new_cond = (TH1D*)gDirectory->Get((histo1Dname_yx_2).c_str()); resHistos1D_2_new_cond->SetName((histo1Dname_2_new_cond+custom).c_str());
+            gROOT->cd();
+      
+            TCanvas* c1 = new TCanvas;
+            c1->SetWindowSize(c1->GetWw(), 1.*c1->GetWh());
+    
+            gPad->SetGridx(); gPad->SetGridy();
+       
+            std::string newname(resHistos1D_1_new_cond->GetName()); newname += "_ratio";
+            TH1D* resHistos1D_1_ratio = (TH1D*)resHistos1D_1_new_cond->Clone(newname.c_str());
+            resHistos1D_1_ratio->Add(resHistos1D_1_def, -1.0);
+
+            TH1D* resHistos1D_1_def_abs = (TH1D*)resHistos1D_1_def->Clone((newname+"_abs").c_str());
+            for (int i = 1; i < resHistos1D_1_def->GetNbinsX()+1; i++) {
+                
+                resHistos1D_1_def_abs->SetBinContent(i, fabs(resHistos1D_1_def->GetBinContent(i)));
+                resHistos1D_1_def_abs->SetBinError(i, resHistos1D_1_def->GetBinError(i));
+            }
+
+            resHistos1D_1_ratio->Divide(resHistos1D_1_def_abs);
+    
+            resHistos1D_1_ratio->SetTitle("");
+            resHistos1D_1_ratio->SetMarkerSize(mSize_);
+            resHistos1D_1_ratio->SetLineWidth(lWidth_);
+            resHistos1D_1_ratio->SetMarkerColor(kBlue-2);
+            resHistos1D_1_ratio->SetLineColor(kBlue-2);
+            resHistos1D_1_ratio->GetYaxis()->SetTitle("#frac{New-Default}{Default}");
+            resHistos1D_1_ratio->GetXaxis()->SetTitle(xtitle.c_str());
+            resHistos1D_1_ratio->GetYaxis()->SetRangeUser(-0.8, 0.3);
+            resHistos1D_1_ratio->GetYaxis()->SetNdivisions(3,5,0);
+            resHistos1D_1_ratio->GetXaxis()->SetNdivisions(5,10,0);
+            resHistos1D_1_ratio->GetYaxis()->SetTitleSize(resHistos1D_1_def->GetYaxis()->GetTitleSize()*(0.7/0.3));
+            resHistos1D_1_ratio->GetXaxis()->SetTitleSize(resHistos1D_1_def->GetXaxis()->GetTitleSize()*(0.7/0.3));
+            resHistos1D_1_ratio->GetYaxis()->SetLabelSize(resHistos1D_1_def->GetYaxis()->GetLabelSize()*(0.7/0.3));
+            resHistos1D_1_ratio->GetXaxis()->SetLabelSize(resHistos1D_1_def->GetXaxis()->GetLabelSize()*(0.7/0.3));
+            resHistos1D_1_ratio->GetXaxis()->SetTitleOffset(2.4/(0.7/0.3));
+            resHistos1D_1_ratio->GetYaxis()->SetTitleOffset(1.3/(0.7/0.3));
+    
+            TPad* p1 = new TPad("p1", "p1", 0.0, 0.30, 1.0, 1.0);
+            p1->Draw(); p1->cd();
+    
+            p1->SetGridx(); p1->SetGridy();
+            p1->SetMargin(lMarginRes_, rMargin_, b1Margin_, t1Margin_);
+    
+            resHistos1D_1_def->Draw("");
+            resHistos1D_1_def->SetTitle("");
+            resHistos1D_1_def->GetXaxis()->SetNdivisions(5,10,0);
+            resHistos1D_1_def->GetXaxis()->SetTitle(xtitle.c_str());
+            resHistos1D_1_def->GetXaxis()->SetTitleOffset(xOff_*resHistos1D_1_def->GetXaxis()->GetTitleOffset());
+            resHistos1D_1_def->GetYaxis()->SetTitleOffset(yOff_*resHistos1D_1_def->GetYaxis()->GetTitleOffset());
+    
+            resHistos1D_1_def->GetYaxis()->SetTitle(ySclTitle_.c_str());
+            resHistos1D_1_def->GetYaxis()->SetRangeUser(yMinS_, yMaxS_);
+            resHistos1D_1_def->SetMarkerSize(mSize_);
+            resHistos1D_1_def->SetLineWidth(lWidth_);
+            resHistos1D_1_def->SetMarkerStyle(24);
+    
+            resHistos1D_1_new_cond->Draw("same");
+            resHistos1D_1_new_cond->SetLineColor(2);
+            resHistos1D_1_new_cond->SetLineWidth(lWidth_);
+            resHistos1D_1_new_cond->SetMarkerColor(2);
+            resHistos1D_1_new_cond->SetMarkerSize(mSize_);
+            resHistos1D_1_new_cond->SetMarkerStyle(20);
+    
+            TLegend* resLegend1 = new TLegend(0.63, 0.75, 0.83, 0.90);
+            resLegend1->AddEntry(resHistos1D_1_def, "Default", "EP");
+            resLegend1->AddEntry(resHistos1D_1_new_cond, "New", "EP");
+            resLegend1->Draw("SAME");
+    
+            c1->Update(); c1->Modified();
+    
+            c1->cd();
+            TPad* p2 = new TPad("p2", "p2", 0.0, 0.0, 1.0, 0.3);
+            p2->Draw(); p2->cd();
+            p2->SetGridx(); p2->SetGridy();
+            p2->SetMargin(lMarginRes_, rMargin_, b2Margin_, t2Margin_);
+            resHistos1D_1_ratio->Draw("EP");
+            c1->Update(); c1->Modified();
+    
+            c1->Print(Form("plots/%s_emu.pdf", (meanName+custom).c_str()));
+    
+            std::string newname2(resHistos1D_2_new_cond->GetName()); newname2 += "_ratio";
+            TH1D* resHistos1D_2_ratio = (TH1D*)resHistos1D_2_new_cond->Clone(newname2.c_str());
+            resHistos1D_2_ratio->Add(resHistos1D_2_def, -1.0);
+            resHistos1D_2_ratio->Divide(resHistos1D_2_def);
+    
+            resHistos1D_2_ratio->SetTitle("");
+            resHistos1D_2_ratio->SetMarkerSize(mSize_);
+            resHistos1D_2_ratio->SetLineWidth(lWidth_);
+            resHistos1D_2_ratio->SetMarkerColor(kBlue-2);
+            resHistos1D_2_ratio->SetLineColor(kBlue-2);
+            resHistos1D_2_ratio->GetYaxis()->SetTitle("#frac{New-Default}{Default}");
+            resHistos1D_2_ratio->GetXaxis()->SetTitle(xtitle.c_str());
+            resHistos1D_2_ratio->GetYaxis()->SetRangeUser(-0.8, 0.3);
+            resHistos1D_2_ratio->GetYaxis()->SetNdivisions(3,5,0);
+            resHistos1D_2_ratio->GetXaxis()->SetNdivisions(5,10,0);
+            resHistos1D_2_ratio->GetYaxis()->SetTitleSize(resHistos1D_2_def->GetYaxis()->GetTitleSize()*(0.7/0.3));
+            resHistos1D_2_ratio->GetXaxis()->SetTitleSize(resHistos1D_2_def->GetXaxis()->GetTitleSize()*(0.7/0.3));
+            resHistos1D_2_ratio->GetYaxis()->SetLabelSize(resHistos1D_2_def->GetYaxis()->GetLabelSize()*(0.7/0.3));
+            resHistos1D_2_ratio->GetXaxis()->SetLabelSize(resHistos1D_2_def->GetXaxis()->GetLabelSize()*(0.7/0.3));
+            resHistos1D_2_ratio->GetXaxis()->SetTitleOffset(2.4/(0.7/0.3));
+            resHistos1D_2_ratio->GetYaxis()->SetTitleOffset(1.3/(0.7/0.3));
+    
+            TCanvas* c2 = new TCanvas;
+            c2->SetWindowSize(c2->GetWw(), 1.*c2->GetWh());
+    
+            TPad* p12 = new TPad("p12", "p12", 0.0, 0.3, 1.0, 1.0);
+            p12->Draw(); p12->cd();
+    
+            p12->SetGridx(); p12->SetGridy();
+            p12->SetMargin(lMarginRes_, rMargin_, b1Margin_, t1Margin_);
+     
+            resHistos1D_2_def->Draw("");
+            resHistos1D_2_def->SetTitle("");
+            resHistos1D_2_def->GetXaxis()->SetTitle(xtitle.c_str());
+            resHistos1D_2_def->GetXaxis()->SetNdivisions(5,10,0);
+            resHistos1D_2_def->GetXaxis()->SetTitleOffset(xOff_*resHistos1D_2_def->GetXaxis()->GetTitleOffset());
+            resHistos1D_2_def->GetYaxis()->SetTitleOffset(yOff_*resHistos1D_2_def->GetYaxis()->GetTitleOffset());
+    
+            resHistos1D_2_def->GetYaxis()->SetTitle(yResTitle_.c_str());
+            resHistos1D_2_def->GetYaxis()->SetRangeUser(yMinR_,yMaxR_);
+            resHistos1D_2_def->SetMarkerSize(mSize_);
+            resHistos1D_2_def->SetLineWidth(lWidth_);
+            resHistos1D_2_def->SetMarkerStyle(24);
+    
+            resHistos1D_2_new_cond->Draw("same");
+            resHistos1D_2_new_cond->SetLineColor(2);
+            resHistos1D_2_new_cond->SetLineWidth(lWidth_);
+            resHistos1D_2_new_cond->SetMarkerColor(2);
+            resHistos1D_2_new_cond->SetMarkerSize(mSize_);
+            resHistos1D_2_new_cond->SetMarkerStyle(20);
+    
+            TLegend* resLegend2 = new TLegend(0.33, 0.75, 0.53, 0.90);
+            resLegend2->AddEntry(resHistos1D_2_def, "Default", "EP");
+            resLegend2->AddEntry(resHistos1D_2_new_cond, "New", "EP");
+            resLegend2->Draw("SAME");
+            c2->Update(); c2->Modified();
+    
+            c2->cd();
+            TPad* p22 = new TPad("p22", "p22", 0.0, 0.0, 1.0, 0.3);
+            p22->Draw(); p22->cd();
+            p22->SetGridx(); p22->SetGridy();
+            p22->SetMargin(lMarginRes_, rMargin_, b2Margin_, t2Margin_);
+            resHistos1D_2_ratio->Draw("EP");
+            c2->Update(); c2->Modified();
+    
+            c2->Print(Form("plots/%s_emu.pdf", (sigmaName+custom).c_str()));
         }
-        effHistsRatio[newName]->SetMinimum(0.6);    
-        effHistsRatio[newName]->SetMaximum(1.4);    
-        effHistsRatio[newName]->SetLineWidth(2);    
+    }  
+    
+    void plotEffs(std::vector<std::string>& types, std::string refName, int rebinF, std::string xtitle, std::string region = "") {
+    
+        refName += region;
+    
+        TH2F* deftemp = dynamic_cast<TH2F*>(files_.at(0)->Get(refName.c_str()));
+        TH2F* newtemp = dynamic_cast<TH2F*>(files_.at(1)->Get(refName.c_str()));
+        for (unsigned int irange = 0; irange < puRanges_.size(); irange++) {
+    
+            std::string custom = puRangeNames_[irange]; std::vector<int> bounds = puRanges_[irange];
+    
+            std::string newName = refName + custom;
+            int lowBin = deftemp->GetYaxis()->FindBin(bounds[0]); int hiBin = deftemp->GetYaxis()->FindBin(bounds[1]);
+    
+            TH1D* refHists_def = deftemp->ProjectionX((newName+"_def").c_str(), lowBin, hiBin, ""); refHists_def->Rebin(rebinF);
+            TH1D* refHists_new_cond = newtemp->ProjectionX((newName+"_new").c_str(), lowBin, hiBin, ""); refHists_new_cond->Rebin(rebinF);
+    
+            for (auto& type : types) {
+                 TLegend* legend = new TLegend(0.71, 0.3, 0.91, 0.45);
+    
+                 std::string histName;
+                 if (region == "Incl" or region == "") { histName = type; }
+                 else { histName = std::string(type) + std::string("_") + std::string(region); }
+    
+                 std::string newName2 = histName + custom;
+    
+                 TH2F* deftemp2 = dynamic_cast<TH2F*>(files_.at(0)->Get(histName.c_str()));
+                 TH2F* newtemp2 = dynamic_cast<TH2F*>(files_.at(1)->Get(histName.c_str()));
+    
+                 lowBin = deftemp->GetYaxis()->FindBin(bounds[0]); hiBin = deftemp->GetYaxis()->FindBin(bounds[1]);
+    
+                 TH1D* hists_def = deftemp2->ProjectionX((newName2+"_def").c_str(), lowBin, hiBin, ""); hists_def->Rebin(rebinF);
+                 TH1D* hists_new_cond = newtemp2->ProjectionX((newName2+"_new").c_str(), lowBin, hiBin, ""); hists_new_cond->Rebin(rebinF);
+    
+                 TGraphAsymmErrors *Eff_def = new TGraphAsymmErrors();
+                 TGraphAsymmErrors *Eff_new_cond = new TGraphAsymmErrors();
+    
+                 std::string newname(hists_new_cond->GetName()); newname += "_ratio";
+                 std::string p1name(hists_new_cond->GetName()); p1name += "_p1";
+                 std::string p2name(hists_new_cond->GetName()); p2name += "_p2";
+    
+                 TH1D *effHists_ratio = (TH1D*)hists_def->Clone((newname+"_ratio").c_str());
+                 effHists_ratio->Reset();
+    
+                 Eff_def->BayesDivide(hists_def,refHists_def);
+                 Eff_new_cond->BayesDivide(hists_new_cond,refHists_new_cond);
+    
+                 double iDErr = 0.0; double iNErr = 0.0;
+                 Double_t xD; Double_t yD; Double_t xN; Double_t yN;
+                 for (int i = 0; i < Eff_def->GetN(); i++) {
+    
+                     Eff_def->GetPoint(i, xD, yD); Eff_new_cond->GetPoint(i, xN, yN);
+    
+                     iDErr = (Eff_def->GetErrorYhigh(i) > Eff_def->GetErrorYlow(i)) ? Eff_def->GetErrorYhigh(i) : Eff_def->GetErrorYlow(i);
+                     iNErr = (Eff_new_cond->GetErrorYhigh(i) > Eff_new_cond->GetErrorYlow(i)) ? Eff_new_cond->GetErrorYhigh(i) : Eff_new_cond->GetErrorYlow(i);
+    
+                     double sumErr = pow(iDErr*iDErr + iNErr*iNErr, 0.5);
+                     double sum = yN-yD;
+    
+                     int ibin = effHists_ratio->FindBin(xD);
+    
+                     if (yD > 0.0) {
+                         effHists_ratio->SetBinContent(ibin, sum/yD);
+                         effHists_ratio->SetBinError(ibin, pow((iDErr*iDErr*yN*yN + sumErr*sumErr*yD*yD) / pow(yD,4), 0.5));
+                     } else {
+                         effHists_ratio->SetBinContent(ibin, -999);
+                         effHists_ratio->SetBinError(ibin, 0.0);
+                     }
+                 }
+    
+                 effHists_ratio->SetTitle("");
+                 effHists_ratio->SetMarkerSize(mSize_);
+                 effHists_ratio->SetLineWidth(lWidth_);
+                 effHists_ratio->SetMarkerColor(kBlue-2);
+                 effHists_ratio->SetLineColor(kBlue-2);
+                 effHists_ratio->GetYaxis()->SetTitle("#frac{New-Default}{Default}");
+                 effHists_ratio->GetXaxis()->SetTitle(xtitle.c_str());
+                 effHists_ratio->GetYaxis()->SetRangeUser(-0.8, 0.30);
+                 effHists_ratio->GetYaxis()->SetNdivisions(3,5,0);
+                 //effHists_ratio->GetXaxis()->SetNdivisions(10,10,0);
+                 effHists_ratio->GetYaxis()->SetTitleSize(hists_def->GetYaxis()->GetTitleSize()*(0.7/0.3));
+                 effHists_ratio->GetXaxis()->SetTitleSize(hists_def->GetXaxis()->GetTitleSize()*(0.7/0.3));
+                 effHists_ratio->GetYaxis()->SetLabelSize(hists_def->GetYaxis()->GetLabelSize()*(0.7/0.3));
+                 effHists_ratio->GetXaxis()->SetLabelSize(hists_def->GetXaxis()->GetLabelSize()*(0.7/0.3));
+                 effHists_ratio->GetXaxis()->SetTitleOffset(2.4/(0.7/0.3));
+                 effHists_ratio->GetYaxis()->SetTitleOffset(1.3/(0.7/0.3));
+                 effHists_ratio->GetXaxis()->SetRangeUser(xMinR_,xMaxR_);
+    
+                 TCanvas* c = new TCanvas;
+                 c->SetWindowSize(c->GetWw(), 1.*c->GetWh());
+                 c->cd();
+                 TPad* p2 = new TPad(p2name.c_str(), p2name.c_str(), 0.0, 0.0, 1.0, 0.3);
+                 p2->SetMargin(lMarginEff_, rMargin_, b2Margin_, t2Margin_);
+                 p2->Draw();
+                 p2->cd();
+                 p2->SetGridx(); p2->SetGridy();
+                 effHists_ratio->Draw("EP");
+                 p2->Update(); p2->Modified();
+    
+                 c->cd(0);
+                 TPad* p1 = new TPad(p1name.c_str(), p1name.c_str(), 0.0, 0.30, 1.0, 1.0);
+                 p1->SetMargin(lMarginEff_, rMargin_, b1Margin_, t1Margin_);
+                 p1->Draw(); p1->cd();
+                 p1->SetGridx(); p1->SetGridy();
+
+                 TH1D* dummy = new TH1D("h1", "h1", effHists_ratio->GetNbinsX(), xMinR_, xMaxR_);
+                 dummy->SetMinimum(yMinR_);
+                 dummy->SetMaximum(yMaxR_);
+                 dummy->GetXaxis()->SetLimits(xMinR_,xMaxR_);
+
+                 Eff_def->SetTitle("");
+                 Eff_def->GetXaxis()->SetLabelSize(0.0);
+                 Eff_def->GetXaxis()->SetTitleOffset(1.17*hists_def->GetXaxis()->GetTitleOffset());
+                 Eff_def->GetYaxis()->SetTitle("Efficiency");
+               
+                 Eff_def->SetMarkerColor(kBlack);
+                 Eff_def->SetMarkerStyle(24);
+                 Eff_new_cond->SetMarkerColor(kRed);
+    
+                 Eff_def->SetLineColor(kBlack);
+                 Eff_new_cond->SetLineColor(kRed);
+    
+                 Eff_def->SetMarkerSize(0.9*mSize_);
+                 Eff_new_cond->SetMarkerSize(mSize_);
+    
+                 Eff_def->SetLineWidth(lWidth_);
+                 Eff_new_cond->SetLineWidth(lWidth_);
+    
+                 legend->AddEntry(Eff_def, "Default", "EP");
+                 legend->AddEntry(Eff_new_cond, "New", "EP");
+    
+                 legend->SetTextSize(0.035);
+    
+                 dummy->Draw();
+                 Eff_def->Draw("AP");
+                 Eff_new_cond->Draw("P");
+                 Eff_def->GetXaxis()->SetLimits(xMinR_,xMaxR_);
+                 Eff_new_cond->GetXaxis()->SetLimits(xMinR_,xMaxR_);
+
+                 Eff_def->SetMinimum(yMinR_);
+                 Eff_new_cond->SetMaximum(yMaxR_);
+
+                 Eff_def->SetMinimum(yMinR_);
+                 Eff_new_cond->SetMaximum(yMaxR_);
+
+                 legend->Draw("SAME");
+                 p1->Update(); p1->Modified();
+    
+                 c->cd(0);
+                 if (region == "") {
+                    c->Print(Form("plots/%sEffs_emu%s_lin.pdf", type.c_str(), custom.c_str()));
+                    c->SetLogx();
+                    c->Print(Form("plots/%sEffs_emu%s_log.pdf", type.c_str(), custom.c_str()));
+                 } else {
+                    c->Print(Form("plots/%sEffs_emu_%s%s_lin.pdf", type.c_str(), region.c_str(), custom.c_str()));
+                    c->SetLogx();
+                    c->Print(Form("plots/%sEffs_emu_%s%s_log.pdf", type.c_str(), region.c_str(), custom.c_str()));
+                }
+    
+                delete deftemp2;
+                delete newtemp2;
+                delete Eff_def;
+                delete Eff_new_cond;
+                delete effHists_ratio;
+                delete c;
+                delete dummy;
+            }
+        }
     }
-  }
 
-  for(auto pair : effHists_new_cond) pair.second->SetLineWidth(2);
-  for(auto pair : effHists_hw) pair.second->SetLineStyle(kDashed);
-  for(auto pair : effHists_def) pair.second->SetLineStyle(kDotted);
+private:
 
-  // Efficiencies
-  std::map<std::string, TH1D*> jetHists_def;
-  std::map<std::string, TH1D*> jetHists_new_cond;
-  std::map<std::string, TH1D*> jetrefHists_def;
-  std::map<std::string, TH1D*> jetrefHists_new_cond;
-  std::map<std::string, TH1D*> metHists_PF_def;
-  std::map<std::string, TH1D*> metHists_PF_new_cond;
-  std::map<std::string, TH1D*> metHists_Calo_def;
-  std::map<std::string, TH1D*> metHists_Calo_new_cond;
+   double mSize_ = 0.8; double lWidth_ = 2.; double lMarginEff_ = 0.17; double lMarginRes_ = 0.19; double xOff_ = 1.14; double yOff_ = 1.40;
+   double rMargin_ = 0.05; double b1Margin_ = 0.00; double b2Margin_ = 0.35; double t1Margin_ = 0.05; double t2Margin_ = 0.00;
+   double yMinS_ = -0.9; double yMaxS_ = 0.9;
+   double yMinR_ = -0.10; double yMaxR_ = 1.05;
+   double xMinR_ = 0.0; double xMaxR_ = 500.0;
+   std::string yResTitle_ = "#sigma#left(#frac{online - offline}{offline}#right)"; std::string ySclTitle_ = "#mu#left(#frac{online - offline}{offline}#right)";
 
-  std::map<std::string, TGraphAsymmErrors*> jeteffHists_def;
-  std::map<std::string, TGraphAsymmErrors*> jeteffHists_new_cond;
-  std::map<std::string, TGraphAsymmErrors*> meteffHists_PF_def;
-  std::map<std::string, TGraphAsymmErrors*> meteffHists_PF_new_cond;
-  std::map<std::string, TGraphAsymmErrors*> meteffHists_Calo_def;
-  std::map<std::string, TGraphAsymmErrors*> meteffHists_Calo_new_cond;
-
-  //-----------------------------------------------------------------------
-  // L1 Jet efficiencies
-  //-----------------------------------------------------------------------
-
-  int rebinF=5;
-  
-  std::vector<TCanvas*> tcanvases;
-  
-  auto mSize = 0.8; auto lWidth = 2.; auto lMargin = 0.20; auto xOff = 1.14; auto yOff = 1.40;
-  auto yMinS = -0.9; auto yMaxS = 0.9;
-  auto yMinR = -0.05; auto yMaxR = 1.05;
-  auto yResTitle = "#sigma#left(#frac{online - offline}{offline}#right)"; auto ySclTitle = "#mu#left(#frac{online - offline}{offline}#right)";
-  auto metXTitle = "pfMET [GeV]"; auto jetXTitle = "Offline Jet E_{T} [GeV]";
-
-  gStyle->SetEndErrorSize(0.0);
-
-  for (auto& [region, histos] : jetTypes) {
-
-      std::string refName = "RefmJet_"; refName += region;
-
-      TH2F* deftemp = dynamic_cast<TH2F*>(files.at(0)->Get(refName.c_str()));
-      TH2F* newtemp = dynamic_cast<TH2F*>(files.at(1)->Get(refName.c_str()));
-      for (unsigned int irange = 0; irange < puRanges.size(); irange++) {
-
-          std::string custom = puRangeNames[irange]; std::vector<int> bounds = puRanges[irange];
-
-          std::string newName = refName + custom;
-          int lowBin = deftemp->GetYaxis()->FindBin(bounds[0]); int hiBin = deftemp->GetYaxis()->FindBin(bounds[1]);
-
-          jetrefHists_def[newName] = deftemp->ProjectionX((newName+"_def").c_str(), lowBin, hiBin, ""); jetrefHists_def[newName]->Rebin(rebinF);
-          jetrefHists_new_cond[newName] = newtemp->ProjectionX((newName+"_new").c_str(), lowBin, hiBin, ""); jetrefHists_new_cond[newName]->Rebin(rebinF);
-
-          for (auto& jetType : histos) {
-               TLegend* jetLegend = new TLegend(0.71, 0.3, 0.91, 0.45);
-
-               std::string histName;
-               if (region == "Incl") { histName = jetType; }
-               else { histName = std::string(jetType) + std::string("_") + std::string(region); }
-
-               std::string newName2 = histName + custom;
-               tcanvases.push_back(new TCanvas);
-               tcanvases.back()->SetWindowSize(tcanvases.back()->GetWw(), 1.*tcanvases.back()->GetWh());
-               gPad->SetGridx(); gPad->SetGridy();
-
-               TH2F* deftemp2 = dynamic_cast<TH2F*>(files.at(0)->Get(histName.c_str()));
-               TH2F* newtemp2 = dynamic_cast<TH2F*>(files.at(1)->Get(histName.c_str()));
-
-               lowBin = deftemp->GetYaxis()->FindBin(bounds[0]); hiBin = deftemp->GetYaxis()->FindBin(bounds[1]);
-
-               jetHists_def[newName2] = deftemp2->ProjectionX((newName2+"_def").c_str(), lowBin, hiBin, ""); jetHists_def[newName2]->Rebin(rebinF);
-               jetHists_new_cond[newName2] = newtemp2->ProjectionX((newName2+"_new").c_str(), lowBin, hiBin, ""); jetHists_new_cond[newName2]->Rebin(rebinF);
-
-               TGraphAsymmErrors *Eff1 = new TGraphAsymmErrors();
-               TGraphAsymmErrors *Eff2 = new TGraphAsymmErrors();
-              
-               Eff1->BayesDivide(jetHists_def[newName2],jetrefHists_def[newName]);
-               Eff2->BayesDivide(jetHists_new_cond[newName2],jetrefHists_new_cond[newName]);
-
-               jeteffHists_def[newName2] = Eff1;
-               jeteffHists_new_cond[newName2] = Eff2;
-              
-               jeteffHists_def[newName2]->GetYaxis()->SetRangeUser(yMinR, yMaxR);
-               jeteffHists_new_cond[newName2]->GetYaxis()->SetRangeUser(yMinR, yMaxR);
-
-               jeteffHists_def[newName2]->SetMarkerColor(kBlack);
-               jeteffHists_new_cond[newName2]->SetMarkerColor(kRed);
-
-               jeteffHists_def[newName2]->SetLineColor(kBlack);
-               jeteffHists_new_cond[newName2]->SetLineColor(kRed);
-
-               jeteffHists_def[newName2]->SetMarkerSize(mSize);
-               jeteffHists_new_cond[newName2]->SetMarkerSize(mSize);
-             
-               jeteffHists_def[newName2]->SetLineWidth(lWidth);
-               jeteffHists_new_cond[newName2]->SetLineWidth(lWidth);
-
-               jetLegend->AddEntry(jeteffHists_def[newName2], "Default", "EP");
-               jetLegend->AddEntry(jeteffHists_new_cond[newName2], "New", "EP");
-
-               jeteffHists_def[newName2]->Draw("AP");
-               jeteffHists_new_cond[newName2]->Draw("P");
-               jeteffHists_def[newName2]->SetTitle("");
-               jeteffHists_new_cond[newName2]->SetTitle("");
-               jeteffHists_def[newName2]->GetXaxis()->SetTitle(jetXTitle);
-               jeteffHists_def[newName2]->GetXaxis()->SetTitleOffset(1.17*jeteffHists_def[newName2]->GetXaxis()->GetTitleOffset());
-               jetLegend->Draw("SAME");
-               jeteffHists_def[newName2]->GetYaxis()->SetTitle("Efficiency");
-
-               tcanvases.back()->Print(Form("plots/%sjetEffs_emu_%s%s_lin.pdf", jetType.c_str(), region.c_str(), custom.c_str()));
-               tcanvases.back()->SetLogx();
-               tcanvases.back()->Print(Form("plots/%sjetEffs_emu_%s%s_log.pdf", jetType.c_str(), region.c_str(), custom.c_str()));
-
-          }
-      }
-  }
-
-  //-----------------------------------------------------------------------
-  // L1 ETM efficiencies
-  //-----------------------------------------------------------------------
-
-  rebinF=10;
-
-  TH2F* deftemp_PF = dynamic_cast<TH2F*>(files.at(0)->Get("RefMET_PF"));
-  TH2F* newtemp_PF = dynamic_cast<TH2F*>(files.at(1)->Get("RefMET_PF"));
-  for (unsigned int irange = 0; irange < puRanges.size(); irange++) {
-
-      std::string custom = puRangeNames[irange]; std::vector<int> bounds = puRanges[irange];
-      int lowBin = deftemp_PF->GetYaxis()->FindBin(bounds[0]); int hiBin = deftemp_PF->GetYaxis()->FindBin(bounds[1]);
-
-      TH1D* metrefHists_PF_def = deftemp_PF->ProjectionX("RefMET_PF_def", lowBin, hiBin, ""); metrefHists_PF_def->Rebin(rebinF);
-      TH1D* metrefHists_PF_new_cond = newtemp_PF->ProjectionX("RefMET_PF_new_cond", lowBin, hiBin, ""); metrefHists_PF_new_cond->Rebin(rebinF);
-
-      for (auto metType : sumTypesPF) {
-
-          TLegend* metLegend = new TLegend(0.67, 0.17, 0.87, 0.33);
-
-          tcanvases.push_back(new TCanvas);
-          tcanvases.back()->SetWindowSize(tcanvases.back()->GetWw(), 1.*tcanvases.back()->GetWh());
-          gPad->SetGridx(); gPad->SetGridy();
-          std::string histName(metType);
-
-          std::string newName = histName + custom;
-
-          TH2F* deftemp2_PF = dynamic_cast<TH2F*>(files.at(0)->Get(histName.c_str()));
-          TH2F* newtemp2_PF = dynamic_cast<TH2F*>(files.at(1)->Get(histName.c_str()));
-
-          metHists_PF_def[newName] = deftemp2_PF->ProjectionX((newName+"_PF_def").c_str(), lowBin, hiBin, ""); metHists_PF_def[newName]->Rebin(rebinF);
-          metHists_PF_new_cond[newName] = newtemp2_PF->ProjectionX((newName+"_PF_new").c_str(), lowBin, hiBin, ""); metHists_PF_new_cond[newName]->Rebin(rebinF);
-
-          TGraphAsymmErrors *Eff1 = new TGraphAsymmErrors();
-          TGraphAsymmErrors *Eff2 = new TGraphAsymmErrors();
-          
-          Eff1->BayesDivide(metHists_PF_def[newName],metrefHists_PF_def);
-          Eff2->BayesDivide(metHists_PF_new_cond[newName],metrefHists_PF_new_cond);
-
-          meteffHists_PF_def[newName] = Eff1;
-          meteffHists_PF_new_cond[newName] = Eff2;
-          
-          meteffHists_PF_def[newName]->GetYaxis()->SetRangeUser(yMinR,yMaxR);
-          meteffHists_PF_new_cond[newName]->GetYaxis()->SetRangeUser(yMinR,yMaxR);
-
-          meteffHists_PF_def[newName]->SetMarkerColor(kBlack);
-          meteffHists_PF_new_cond[newName]->SetMarkerColor(kRed);
-
-          meteffHists_PF_def[newName]->SetLineColor(kBlack);
-          meteffHists_PF_new_cond[newName]->SetLineColor(kRed);
-
-          meteffHists_PF_def[newName]->SetLineWidth(lWidth);
-          meteffHists_PF_new_cond[newName]->SetLineWidth(lWidth);
-
-          meteffHists_PF_def[newName]->SetMarkerSize(mSize);
-          meteffHists_PF_new_cond[newName]->SetMarkerSize(mSize);
-
-          metLegend->AddEntry(meteffHists_PF_def[newName], "Default", "EP");
-          metLegend->AddEntry(meteffHists_PF_new_cond[newName], "New", "EP");
-      
-          meteffHists_PF_def[newName]->Draw("AP");
-          meteffHists_PF_new_cond[newName]->Draw("P");
-          meteffHists_PF_def[newName]->SetTitle("");
-          meteffHists_PF_new_cond[newName]->SetTitle("");
-          meteffHists_PF_def[newName]->GetXaxis()->SetTitle(metXTitle);
-          meteffHists_PF_def[newName]->GetXaxis()->SetTitleOffset(1.17*meteffHists_PF_def[newName]->GetXaxis()->GetTitleOffset());
-          metLegend->Draw("SAME");
-
-          meteffHists_PF_def[newName]->GetYaxis()->SetTitle("Efficiency");
-
-          tcanvases.back()->Print(Form("plots/%smetEffs%s_emu_lin.pdf", metType.c_str(), custom.c_str()));
-          tcanvases.back()->SetLogx();
-          tcanvases.back()->Print(Form("plots/%smetEffs%s_emu_log.pdf", metType.c_str(), custom.c_str()));
-     }
-
-  }
+   // default, then new conditions
+   std::vector<std::string> filenames_ = {"l1analysis_def.root", "l1analysis_new_cond.root"};
+   std::vector<std::string> l1Types_ = {"singleJet", "doubleJet", "tripleJet", "quadJet",
+     				"htSum", "etSum", "metSum", "metHFSum"};
    
-  TH2F* deftemp_Calo = dynamic_cast<TH2F*>(files.at(0)->Get("RefMET_Calo"));
-  TH2F* newtemp_Calo = dynamic_cast<TH2F*>(files.at(1)->Get("RefMET_Calo"));
-  for (unsigned int irange = 0; irange < puRanges.size(); irange++) {
+   std::vector<std::string> puRangeNames_ = {"_lowPU", "_midPU", "_highPU", ""};
 
-      std::string custom = puRangeNames[irange]; std::vector<int> bounds = puRanges[irange];
-      int lowBin = deftemp_Calo->GetYaxis()->FindBin(bounds[0]); int hiBin = deftemp_Calo->GetYaxis()->FindBin(bounds[1]);
+   std::vector<std::vector<int> > puRanges_ = {{0,29}, {30,59}, {60,90}, {0,90}};
+     
+   std::vector<TFile*> files_;
 
-      TH1D* metrefHists_Calo_def = deftemp_Calo->ProjectionX("RefMET_Calo_def", lowBin, hiBin, ""); metrefHists_Calo_def->Rebin(rebinF);
-      TH1D* metrefHists_Calo_new_cond = newtemp_Calo->ProjectionX("RefMET_Calo_new_cond", lowBin, hiBin, ""); metrefHists_Calo_new_cond->Rebin(rebinF);
+};
 
-      for (auto metType : sumTypesCalo) {
+int main() {
 
-          TLegend* metLegend = new TLegend(0.67, 0.17, 0.87, 0.33);
+    // include comparisons between HW and data TPs
+    //bool includeHW = false;
 
-          tcanvases.push_back(new TCanvas);
-          tcanvases.back()->SetWindowSize(tcanvases.back()->GetWw(), 1.*tcanvases.back()->GetWh());
-          gPad->SetGridx(); gPad->SetGridy();
-          std::string histName(metType);
+    setTDRStyle();
+    gROOT->ForceStyle();
+    
+    // Make the plotter object to run the show 
+    l1Plotter thePlotter = l1Plotter();
 
-          std::string newName = histName + custom;
+    std::string pfMetXTitle = "pfMET [GeV]"; std::string caloMetXTitle = "Calo MET [GeV]"; std::string jetXTitle = "Offline Jet E_{T} [GeV]";
 
-          TH2F* deftemp2 = dynamic_cast<TH2F*>(files.at(0)->Get(histName.c_str()));
-          TH2F* newtemp2 = dynamic_cast<TH2F*>(files.at(1)->Get(histName.c_str()));
+    //-----------------------------------------------------------------------
+    // L1 Jet efficiencies
+    //-----------------------------------------------------------------------
 
-          metHists_Calo_def[newName] = deftemp2->ProjectionX((newName+"_Calo_def").c_str(), lowBin, hiBin, ""); metHists_Calo_def[newName]->Rebin(rebinF);
-          metHists_Calo_new_cond[newName] = newtemp2->ProjectionX((newName+"_Calo_new").c_str(), lowBin, hiBin, ""); metHists_Calo_new_cond[newName]->Rebin(rebinF);
+    gStyle->SetEndErrorSize(0.0);
 
-          TGraphAsymmErrors *Eff1 = new TGraphAsymmErrors();
-          TGraphAsymmErrors *Eff2 = new TGraphAsymmErrors();
-          
-          Eff1->BayesDivide(metHists_Calo_def[newName],metrefHists_Calo_def);
-          Eff2->BayesDivide(metHists_Calo_new_cond[newName],metrefHists_Calo_new_cond);
+    std::map<std::string, std::vector<std::string> > jetTypes = 
+    {{"Incl", {"JetEt12","JetEt35","JetEt60","JetEt90","JetEt120","JetEt180"}},
+    {"HB",   {"JetEt12","JetEt35","JetEt60","JetEt90","JetEt120","JetEt180"}},
+    {"HE1",  {"JetEt12","JetEt35","JetEt60","JetEt90","JetEt120","JetEt180"}},
+    {"HE2",  {"JetEt12","JetEt35","JetEt60","JetEt90","JetEt120","JetEt180"}},
+    {"HE",   {"JetEt12","JetEt35","JetEt60","JetEt90","JetEt120","JetEt180"}}};
 
-          meteffHists_Calo_def[newName] = Eff1;
-          meteffHists_Calo_new_cond[newName] = Eff2;
-          
-          meteffHists_Calo_def[newName]->GetYaxis()->SetRangeUser(yMinR,yMaxR);
-          meteffHists_Calo_new_cond[newName]->GetYaxis()->SetRangeUser(yMinR,yMaxR);
-
-          meteffHists_Calo_def[newName]->SetMarkerColor(kBlack);
-          meteffHists_Calo_new_cond[newName]->SetMarkerColor(kRed);
-
-          meteffHists_Calo_def[newName]->SetLineColor(kBlack);
-          meteffHists_Calo_new_cond[newName]->SetLineColor(kRed);
-
-          meteffHists_Calo_def[newName]->SetLineWidth(lWidth);
-          meteffHists_Calo_new_cond[newName]->SetLineWidth(lWidth);
-
-          meteffHists_Calo_def[newName]->SetMarkerSize(mSize);
-          meteffHists_Calo_new_cond[newName]->SetMarkerSize(mSize);
-
-          metLegend->AddEntry(meteffHists_Calo_def[newName], "Default", "EP");
-          metLegend->AddEntry(meteffHists_Calo_new_cond[newName], "New", "EP");
-      
-          meteffHists_Calo_def[newName]->Draw("AP");
-          meteffHists_Calo_new_cond[newName]->Draw("P");
-          meteffHists_Calo_def[newName]->SetTitle("");
-          meteffHists_Calo_new_cond[newName]->SetTitle("");
-          meteffHists_Calo_def[newName]->GetXaxis()->SetTitle(metXTitle);
-          meteffHists_Calo_def[newName]->GetXaxis()->SetTitleOffset(1.17*meteffHists_Calo_def[newName]->GetXaxis()->GetTitleOffset());
-          metLegend->Draw("SAME");
-
-          meteffHists_Calo_def[newName]->GetYaxis()->SetTitle("Efficiency");
-
-          tcanvases.back()->Print(Form("plots/%smetEffs%s_Calo_emu_lin.pdf", metType.c_str(), custom.c_str()));
-          tcanvases.back()->SetLogx();
-          tcanvases.back()->Print(Form("plots/%smetEffs%s_Calo_emu_log.pdf", metType.c_str(), custom.c_str()));
-     }
-
-  }
-
-   //-----------------------------------------------------------------------
-   // L1 Jet resolution summary plots
-   //-----------------------------------------------------------------------
-  
-  TF1 *fgaus = new TF1("g1","gaus");//,-2.,2.);
-  fgaus->SetRange(-1.,1.);
-  
-  // // Jet resolution
-  std::vector<TCanvas*> mycanvases_1;   std::vector<TCanvas*> mycanvases_2;
-  std::vector<TH2D*> resHistos2D_def;   std::vector<TH2D*> resHistos2D_new_cond;
-  std::vector<TH1D*> resHistos1D_1_def; std::vector<TH1D*> resHistos1D_1_new_cond;
-  std::vector<TH1D*> resHistos1D_2_def; std::vector<TH1D*> resHistos1D_2_new_cond;
-  std::vector<std::string> regions = {"Incl", "HE", "HB", "HE2", "HE1"}; 
-
-  for (auto& region : regions) {
-
-      std::string histo2Dname = "hresJet_" + region;
-      std::string histo1Dname_1 = histo2Dname + "_1"; std::string histo1Dname_yx_1 = histo2Dname + "_yx_1";
-      std::string histo1Dname_2 = histo2Dname + "_2"; std::string histo1Dname_yx_2 = histo2Dname + "_yx_2";
-
-      std::string histo1Dname_1_new_cond = histo1Dname_1 + "_" + region + "_new_cond";
-      std::string histo1Dname_2_new_cond = histo1Dname_2 + "_" + region + "_new_cond";
-
-      std::string histo1Dname_1_def = histo1Dname_1 + "_" + region + "_def";
-      std::string histo1Dname_2_def = histo1Dname_2 + "_" + region + "_def";
-
-      std::string meanName = "resJet_mean_" + region;
-      std::string sigmaName = "resJet_sigma_" + region;
-
-      TH3F* deftemp = dynamic_cast<TH3F*>(files.at(0)->Get(histo2Dname.c_str()));
-      TH3F* newtemp = dynamic_cast<TH3F*>(files.at(1)->Get(histo2Dname.c_str()));
-
-      for (unsigned int irange = 0; irange < puRanges.size(); irange++) {
-
-          std::string custom = puRangeNames[irange]; std::vector<int> bounds = puRanges[irange];
-          int lowBin = deftemp->GetZaxis()->FindBin(bounds[0]); int hiBin = deftemp->GetZaxis()->FindBin(bounds[1]);
-
-          deftemp->GetZaxis()->SetRange(lowBin, hiBin); 
-          newtemp->GetZaxis()->SetRange(lowBin, hiBin);
-
-          resHistos2D_def.push_back(dynamic_cast<TH2D*>(deftemp->Project3D("yx"))); resHistos2D_def.back()->RebinX(10);
-          resHistos2D_def.back()->FitSlicesY(fgaus);
-
-          resHistos1D_1_def.push_back((TH1D*)gDirectory->Get((histo1Dname_yx_1).c_str())); resHistos1D_1_def.back()->SetName((histo1Dname_1_def+custom).c_str());
-          resHistos1D_2_def.push_back((TH1D*)gDirectory->Get((histo1Dname_yx_2).c_str())); resHistos1D_2_def.back()->SetName((histo1Dname_2_def+custom).c_str());
-
-          gROOT->cd();
-
-          resHistos2D_new_cond.push_back(dynamic_cast<TH2D*>(newtemp->Project3D("yx"))); resHistos2D_new_cond.back()->RebinX(10);
-          resHistos2D_new_cond.back()->FitSlicesY(fgaus);
-          resHistos1D_1_new_cond.push_back((TH1D*)gDirectory->Get((histo1Dname_yx_1).c_str())); resHistos1D_1_new_cond.back()->SetName((histo1Dname_1_new_cond+custom).c_str());
-          resHistos1D_2_new_cond.push_back((TH1D*)gDirectory->Get((histo1Dname_yx_2).c_str())); resHistos1D_2_new_cond.back()->SetName((histo1Dname_2_new_cond+custom).c_str());
-          gROOT->cd();
-  
-          mycanvases_1.push_back(new TCanvas);
-          mycanvases_1.back()->SetWindowSize(mycanvases_1.back()->GetWw(), 1.*mycanvases_1.back()->GetWh());
-
-          gPad->SetGridx(); gPad->SetGridy();
-          gPad->SetLeftMargin(lMargin);
-   
-          resHistos1D_1_def.back()->Draw("");
-          resHistos1D_1_def.back()->SetTitle("");
-          resHistos1D_1_def.back()->GetXaxis()->SetNdivisions(5,10,0);
-          resHistos1D_1_def.back()->GetXaxis()->SetTitle(jetXTitle);
-          resHistos1D_1_def.back()->GetXaxis()->SetTitleOffset(xOff*resHistos1D_1_def.back()->GetXaxis()->GetTitleOffset());
-          resHistos1D_1_def.back()->GetYaxis()->SetTitleOffset(yOff*resHistos1D_1_def.back()->GetYaxis()->GetTitleOffset());
-
-          resHistos1D_1_def.back()->GetYaxis()->SetTitle(ySclTitle);
-          resHistos1D_1_def.back()->GetYaxis()->SetRangeUser(yMinS, yMaxS);
-          resHistos1D_1_def.back()->SetMarkerSize(mSize);
-          resHistos1D_1_def.back()->SetLineWidth(lWidth);
-          resHistos1D_1_def.back()->SetMarkerStyle(24);
-
-          resHistos1D_1_new_cond.back()->Draw("same");
-          resHistos1D_1_new_cond.back()->SetLineColor(2);
-          resHistos1D_1_new_cond.back()->SetLineWidth(lWidth);
-          resHistos1D_1_new_cond.back()->SetMarkerColor(2);
-          resHistos1D_1_new_cond.back()->SetMarkerSize(mSize);
-          resHistos1D_1_new_cond.back()->SetMarkerStyle(20);
-
-          TLegend* resLegend1 = new TLegend(0.23, 0.17, 0.43, 0.32);
-          resLegend1->AddEntry(resHistos1D_1_def.back(), "Default", "EP");
-          resLegend1->AddEntry(resHistos1D_1_new_cond.back(), "New", "EP");
-          resLegend1->Draw("SAME");
-
-          mycanvases_1.back()->Print(Form("plots/%s_emu.pdf", (meanName+custom).c_str()));
-
-          mycanvases_2.push_back(new TCanvas);
-          mycanvases_2.back()->SetWindowSize(mycanvases_2.back()->GetWw(), 1.*mycanvases_2.back()->GetWh());
-
-          gPad->SetGridx(); gPad->SetGridy();
-          gPad->SetLeftMargin(lMargin);
- 
-          resHistos1D_2_def.back()->Draw("");
-          resHistos1D_2_def.back()->SetTitle("");
-          resHistos1D_2_def.back()->GetXaxis()->SetTitle(jetXTitle);
-          resHistos1D_2_def.back()->GetXaxis()->SetNdivisions(5,10,0);
-          resHistos1D_2_def.back()->GetXaxis()->SetTitleOffset(xOff*resHistos1D_2_def.back()->GetXaxis()->GetTitleOffset());
-          resHistos1D_2_def.back()->GetYaxis()->SetTitleOffset(yOff*resHistos1D_2_def.back()->GetYaxis()->GetTitleOffset());
-
-          resHistos1D_2_def.back()->GetYaxis()->SetTitle(yResTitle);
-          resHistos1D_2_def.back()->GetYaxis()->SetRangeUser(yMinR,yMaxR);
-          resHistos1D_2_def.back()->SetMarkerSize(mSize);
-          resHistos1D_2_def.back()->SetLineWidth(lWidth);
-          resHistos1D_2_def.back()->SetMarkerStyle(24);
-
-          resHistos1D_2_new_cond.back()->Draw("same");
-          resHistos1D_2_new_cond.back()->SetLineColor(2);
-          resHistos1D_2_new_cond.back()->SetLineWidth(lWidth);
-          resHistos1D_2_new_cond.back()->SetMarkerColor(2);
-          resHistos1D_2_new_cond.back()->SetMarkerSize(mSize);
-          resHistos1D_2_new_cond.back()->SetMarkerStyle(20);
-
-          TLegend* resLegend2 = new TLegend(0.33, 0.75, 0.53, 0.90);
-          resLegend2->AddEntry(resHistos1D_2_def.back(), "Default", "EP");
-          resLegend2->AddEntry(resHistos1D_2_new_cond.back(), "New", "EP");
-          resLegend2->Draw("SAME");
-
-          mycanvases_2.back()->Print(Form("plots/%s_emu.pdf", (sigmaName+custom).c_str()));
-      }
-  }
-
-  //-----------------------------------------------------------------------
-  // L1 ETM resolution summary plots
-  //-----------------------------------------------------------------------
-  
-  TF1 *fgaus0 = new TF1("g0","gaus");//,-2.,2.);
-  fgaus0->SetRange(-1.,3.);
-  
-  TH3F* dtemp_Calo = dynamic_cast<TH3F*>(files.at(0)->Get("hResMET_Calo"));
-  TH3F* ntemp_Calo = dynamic_cast<TH3F*>(files.at(1)->Get("hResMET_Calo"));
-  for (unsigned int irange = 0; irange < puRanges.size(); irange++) {
-
-      std::string custom = puRangeNames[irange]; std::vector<int> bounds = puRanges[irange];
-      int lowBin = dtemp_Calo->GetZaxis()->FindBin(bounds[0]); int hiBin = dtemp_Calo->GetZaxis()->FindBin(bounds[1]);
-
-      dtemp_Calo->GetZaxis()->SetRange(lowBin, hiBin); 
-      ntemp_Calo->GetZaxis()->SetRange(lowBin, hiBin);
-
-      std::vector<TCanvas*> mycanvases2;
-      TH2D *resMET_Calo_def = dynamic_cast<TH2D*>(dtemp_Calo->Project3D("yx"));resMET_Calo_def->RebinX(10);
-      files.at(0)->cd();
-      resMET_Calo_def->FitSlicesY(fgaus0);//,1,80);//,20);
-
-      TH2D *resMET_Calo_new_cond = dynamic_cast<TH2D*>(ntemp_Calo->Project3D("yx"));resMET_Calo_new_cond->RebinX(10);
-      files.at(1)->cd();
-      resMET_Calo_new_cond->FitSlicesY(fgaus0);//,1,80);//,20);
-      
-      mycanvases2.push_back(new TCanvas);
-      mycanvases2.back()->SetWindowSize(mycanvases2.back()->GetWw(), 1.*mycanvases2.back()->GetWh());
-
-      gPad->SetGridx(); gPad->SetGridy();
-      gPad->SetLeftMargin(lMargin);
-
-      TH1D *resMET_Calo_def_1 = (TH1D*)files.at(0)->Get("hResMET_Calo_yx_1");
-      resMET_Calo_def_1->Draw("");
-      resMET_Calo_def_1->SetTitle("");
-
-      resMET_Calo_def_1->GetXaxis()->SetTitle(metXTitle);
-      resMET_Calo_def_1->GetXaxis()->SetNdivisions(5,10,0);
-
-      resMET_Calo_def_1->GetXaxis()->SetTitleOffset(xOff*resMET_Calo_def_1->GetXaxis()->GetTitleOffset());
-      resMET_Calo_def_1->GetYaxis()->SetTitleOffset(yOff*resMET_Calo_def_1->GetYaxis()->GetTitleOffset());
-
-
-      resMET_Calo_def_1->GetYaxis()->SetTitle(ySclTitle);
-      resMET_Calo_def_1->GetYaxis()->SetRangeUser(-2.25,2.25);
-      resMET_Calo_def_1->SetMarkerSize(mSize);
-      resMET_Calo_def_1->SetLineWidth(lWidth);
-      resMET_Calo_def_1->SetMarkerStyle(24);
-      resMET_Calo_def_1->SetMarkerColor(1);
-      
-      TH1D *resMET_Calo_new_cond_1 = (TH1D*)files.at(1)->Get("hResMET_Calo_yx_1");
-      resMET_Calo_new_cond_1->Draw("same");
-      resMET_Calo_new_cond_1->SetLineColor(2);
-      resMET_Calo_new_cond_1->SetLineWidth(lWidth);
-      resMET_Calo_new_cond_1->SetMarkerColor(2);
-      resMET_Calo_new_cond_1->SetMarkerSize(mSize);
-      resMET_Calo_new_cond_1->SetMarkerStyle(20);
-      
-      TLegend* resLegend1 = new TLegend(0.23, 0.17, 0.43, 0.32);
-      resLegend1->AddEntry(resMET_Calo_def_1, "Default", "EP");
-      resLegend1->AddEntry(resMET_Calo_new_cond_1, "New", "EP");
-      resLegend1->Draw("SAME");
-
-      mycanvases2.back()->Print(Form("plots/%s_emu.pdf", ("resMET_Calo_mean"+custom).c_str()));
-
-      mycanvases2.push_back(new TCanvas);
-      mycanvases2.back()->SetWindowSize(mycanvases2.back()->GetWw(), 1.*mycanvases2.back()->GetWh());
-
-      gPad->SetGridx(); gPad->SetGridy();
-      gPad->SetLeftMargin(lMargin);
-
-      TH1D *resMET_Calo_def_2 = (TH1D*)files.at(0)->Get("hResMET_Calo_yx_2");
-      resMET_Calo_def_2->Draw("");
-      resMET_Calo_def_2->SetTitle("");
-
-      resMET_Calo_def_2->GetXaxis()->SetTitle(metXTitle);
-      resMET_Calo_def_2->GetXaxis()->SetNdivisions(5,10,0);
-      resMET_Calo_def_2->GetXaxis()->SetTitleOffset(xOff*resMET_Calo_def_2->GetXaxis()->GetTitleOffset());
-      resMET_Calo_def_2->GetYaxis()->SetTitleOffset(yOff*resMET_Calo_def_2->GetYaxis()->GetTitleOffset());
-
-
-      resMET_Calo_def_2->GetYaxis()->SetTitle(yResTitle);
-      resMET_Calo_def_2->GetYaxis()->SetRangeUser(yMinR, yMaxR);
-      resMET_Calo_def_2->SetMarkerSize(mSize);
-      resMET_Calo_def_2->SetLineWidth(lWidth);
-      resMET_Calo_def_2->SetMarkerStyle(24);
-      resMET_Calo_def_2->SetMarkerColor(1);
-
-      TH1D *resMET_Calo_new_cond_2 = (TH1D*)files.at(1)->Get("hResMET_Calo_yx_2");
-      resMET_Calo_new_cond_2->Draw("same");
-      resMET_Calo_new_cond_2->SetLineColor(2);
-      resMET_Calo_new_cond_2->SetMarkerColor(2);
-      resMET_Calo_new_cond_2->SetMarkerSize(mSize);
-      resMET_Calo_new_cond_2->SetLineWidth(lWidth);
-      resMET_Calo_new_cond_2->SetMarkerStyle(20);
-      
-      TLegend* resLegend2 = new TLegend(0.23, 0.17, 0.43, 0.32);
-      resLegend2->AddEntry(resMET_Calo_def_2, "Default", "EP");
-      resLegend2->AddEntry(resMET_Calo_new_cond_2, "New", "EP");
-      resLegend2->Draw("SAME");
-
-      mycanvases2.back()->Print(Form("plots/%s_emu.pdf", ("resMET_Calo_sigma"+custom).c_str()));
-  }
-  
-  TH3F* dtemp_PF = dynamic_cast<TH3F*>(files.at(0)->Get("hResMET_PF"));
-  TH3F* ntemp_PF = dynamic_cast<TH3F*>(files.at(1)->Get("hResMET_PF"));
-  for (unsigned int irange = 0; irange < puRanges.size(); irange++) {
-
-      std::string custom = puRangeNames[irange]; std::vector<int> bounds = puRanges[irange];
-      int lowBin = dtemp_PF->GetZaxis()->FindBin(bounds[0]); int hiBin = dtemp_PF->GetZaxis()->FindBin(bounds[1]);
-
-      dtemp_PF->GetZaxis()->SetRange(lowBin, hiBin); 
-      ntemp_PF->GetZaxis()->SetRange(lowBin, hiBin);
-
-      std::vector<TCanvas*> mycanvases2;
-      TH2D *resMET_PF_def = dynamic_cast<TH2D*>(dtemp_PF->Project3D("yx"));resMET_PF_def->RebinX(10);
-      files.at(0)->cd();
-      resMET_PF_def->FitSlicesY(fgaus0);//,1,80);//,20);
-
-      TH2D *resMET_PF_new_cond = dynamic_cast<TH2D*>(ntemp_PF->Project3D("yx"));resMET_PF_new_cond->RebinX(10);
-      files.at(1)->cd();
-      resMET_PF_new_cond->FitSlicesY(fgaus0);//,1,80);//,20);
-      
-      mycanvases2.push_back(new TCanvas);
-      mycanvases2.back()->SetWindowSize(mycanvases2.back()->GetWw(), 1.*mycanvases2.back()->GetWh());
-
-      gPad->SetGridx(); gPad->SetGridy();
-      gPad->SetLeftMargin(lMargin);
-
-      TH1D *resMET_PF_def_1 = (TH1D*)files.at(0)->Get("hResMET_PF_yx_1");
-      resMET_PF_def_1->Draw("");
-      resMET_PF_def_1->SetTitle("");
-
-      resMET_PF_def_1->GetXaxis()->SetTitle(metXTitle);
-      resMET_PF_def_1->GetXaxis()->SetNdivisions(5,10,0);
-
-      resMET_PF_def_1->GetXaxis()->SetTitleOffset(xOff*resMET_PF_def_1->GetXaxis()->GetTitleOffset());
-      resMET_PF_def_1->GetYaxis()->SetTitleOffset(yOff*resMET_PF_def_1->GetYaxis()->GetTitleOffset());
-
-
-      resMET_PF_def_1->GetYaxis()->SetTitle(ySclTitle);
-      resMET_PF_def_1->GetYaxis()->SetRangeUser(-2.25,2.25);
-      resMET_PF_def_1->SetMarkerSize(mSize);
-      resMET_PF_def_1->SetLineWidth(lWidth);
-      resMET_PF_def_1->SetMarkerStyle(24);
-      resMET_PF_def_1->SetMarkerColor(1);
-      
-      TH1D *resMET_PF_new_cond_1 = (TH1D*)files.at(1)->Get("hResMET_PF_yx_1");
-      resMET_PF_new_cond_1->Draw("same");
-      resMET_PF_new_cond_1->SetLineColor(2);
-      resMET_PF_new_cond_1->SetLineWidth(lWidth);
-      resMET_PF_new_cond_1->SetMarkerColor(2);
-      resMET_PF_new_cond_1->SetMarkerSize(mSize);
-      resMET_PF_new_cond_1->SetMarkerStyle(20);
-      
-      TLegend* resLegend1 = new TLegend(0.23, 0.17, 0.43, 0.32);
-      resLegend1->AddEntry(resMET_PF_def_1, "Default", "EP");
-      resLegend1->AddEntry(resMET_PF_new_cond_1, "New", "EP");
-      resLegend1->Draw("SAME");
-
-      mycanvases2.back()->Print(Form("plots/%s_emu.pdf", ("resMET_PF_mean"+custom).c_str()));
-
-      mycanvases2.push_back(new TCanvas);
-      mycanvases2.back()->SetWindowSize(mycanvases2.back()->GetWw(), 1.*mycanvases2.back()->GetWh());
-
-      gPad->SetGridx(); gPad->SetGridy();
-      gPad->SetLeftMargin(lMargin);
-
-      TH1D *resMET_PF_def_2 = (TH1D*)files.at(0)->Get("hResMET_PF_yx_2");
-      resMET_PF_def_2->Draw("");
-      resMET_PF_def_2->SetTitle("");
-
-      resMET_PF_def_2->GetXaxis()->SetTitle(metXTitle);
-      resMET_PF_def_2->GetXaxis()->SetNdivisions(5,10,0);
-      resMET_PF_def_2->GetXaxis()->SetTitleOffset(xOff*resMET_PF_def_2->GetXaxis()->GetTitleOffset());
-      resMET_PF_def_2->GetYaxis()->SetTitleOffset(yOff*resMET_PF_def_2->GetYaxis()->GetTitleOffset());
-
-
-      resMET_PF_def_2->GetYaxis()->SetTitle(yResTitle);
-      resMET_PF_def_2->GetYaxis()->SetRangeUser(yMinR, yMaxR);
-      resMET_PF_def_2->SetMarkerSize(mSize);
-      resMET_PF_def_2->SetLineWidth(lWidth);
-      resMET_PF_def_2->SetMarkerStyle(24);
-      resMET_PF_def_2->SetMarkerColor(1);
-
-      TH1D *resMET_PF_new_cond_2 = (TH1D*)files.at(1)->Get("hResMET_PF_yx_2");
-      resMET_PF_new_cond_2->Draw("same");
-      resMET_PF_new_cond_2->SetLineColor(2);
-      resMET_PF_new_cond_2->SetMarkerColor(2);
-      resMET_PF_new_cond_2->SetMarkerSize(mSize);
-      resMET_PF_new_cond_2->SetLineWidth(lWidth);
-      resMET_PF_new_cond_2->SetMarkerStyle(20);
-      
-      TLegend* resLegend2 = new TLegend(0.23, 0.17, 0.43, 0.32);
-      resLegend2->AddEntry(resMET_PF_def_2, "Default", "EP");
-      resLegend2->AddEntry(resMET_PF_new_cond_2, "New", "EP");
-      resLegend2->Draw("SAME");
-
-      mycanvases2.back()->Print(Form("plots/%s_emu.pdf", ("resMET_PF_sigma"+custom).c_str()));
-  }
-
-  //-----------------------------------------------------------------------
-  // Resolution in ET bins plots
-  //-----------------------------------------------------------------------
-  
-  //std::map<std::string, TH1F*> resHists_def;
-  //std::map<std::string, TH1F*> resHists_new_cond;
-  //std::map<std::string, TH1F*> resHistsRatio;
-  //
-  //std::vector<TCanvas*> rcanvases;
-  //for(auto rType : resTypes) {
-  //  std::string histName(rType);
-  //  // std::string histNameHw(histName);
-  //  //    histName += "Effs_emu";
-  //  //  histNameHw += "Effs_hw";
-  //  rcanvases.push_back(new TCanvas);
-  //  rcanvases.back()->SetWindowSize(rcanvases.back()->GetWw(), 1.*rcanvases.back()->GetWh());
-  //  
-  //  resHists_def[rType] = dynamic_cast<TH1F*>(files.at(0)->Get(histName.c_str()));
-  //  //  resHists_hw[rType] = dynamic_cast<TH1F*>(files.at(0)->Get(histNameHw.c_str()));
-  //  resHists_new_cond[rType] = dynamic_cast<TH1F*>(files.at(1)->Get(histName.c_str()));
-  //  
-  //  resHists_def[rType]->Rebin(rebinFactor);
-  //  //  resHists_hw[rType]->Rebin(rebinFactor);
-  //  resHists_new_cond[rType]->Rebin(rebinFactor);
-
-  //  resHists_def[rType]->SetLineColor(kBlack); //histColor[rType]);
-  //  //   resHists_hw[rType]->SetLineColor(histColor[rType]);
-  //  resHists_new_cond[rType]->SetLineColor(kRed); //histColor[rType]);
-
-  //  resHists_def[rType]->Fit("gaus","R+","hist",-2.,2.); //Draw("hist");
-  //  resHists_def[rType]->GetYaxis()->SetRangeUser(0.,1.4*resHists_def[rType]->GetMaximum());
-  //  TF1 *f1 = resHists_def[rType]->GetFunction("gaus"); //->SetLineColor(kBlack);
-  //  f1->SetLineColor(kBlack);
-  //  f1->Draw("SAME");
-  //  
-  //  resHists_new_cond[rType]->Fit("gaus","R+","histsame",-2.,2.);
-  //  TF1 *f2 = resHists_new_cond[rType]->GetFunction("gaus"); //->SetLineColor(kBlack);
-  //  f2->SetLineColor(kRed);
-  //  f2->Draw("SAME");
-
-  //  rcanvases.back()->Print(Form("plots/%sbin_emu.pdf", rType.c_str()));
-  //  
-  //}
-  //for(auto pair : resHists_new_cond) pair.second->SetLineWidth(2);
-  //// for(auto pair : resHists_hw) pair.second->SetLineStyle(kDashed);
-  //for(auto pair : resHists_def) pair.second->SetLineStyle(kDotted);
-  
-  //-----------------------------------------------------------------------
-  // Standard L1 quantities
-  //-----------------------------------------------------------------------
-  
-  //std::vector<std::string> jetPlots = {"singleJet", "doubleJet", "tripleJet", "quadJet"};
-  //std::vector<std::string> scalarSumPlots = {"etSum", "htSum"};
-  //std::vector<std::string> vectorSumPlots = {"metSum", "metHFSum"};
-
-  //
-  //std::vector<TCanvas*> canvases;
-  //std::vector<TPad*> pad1;
-  //std::vector<TPad*> pad2;
-  //std::map<std::string, std::vector<std::string> > plots;
-  //plots["jet"] = jetPlots;
-  //plots["scalarSum"] = scalarSumPlots;
-  //plots["vectorSum"] = vectorSumPlots;
-  //// plots["resolution"] = resTypes;
-
-  //for(auto iplot : plots) {
-
-  //  canvases.push_back(new TCanvas);
-  //  canvases.back()->SetWindowSize(canvases.back()->GetWw(), 1.*canvases.back()->GetWh());
-  //  pad1.push_back(new TPad("pad1", "pad1", 0, 0.3, 1, 1));
-  //  pad1.back()->SetLogy();
-  //  pad1.back()->SetGrid();
-  //  pad1.back()->Draw();
-  //  pad2.push_back(new TPad("pad2", "pad2", 0, 0, 1, 0.3));
-  //  pad2.back()->SetGrid();
-  //  pad2.back()->Draw();
-  //  
-  //  pad1.back()->cd();
-
-  //  effHists_def[iplot.second.front()]->Draw("hist");
-  //  effHists_def[iplot.second.front()]->GetYaxis()->SetRangeUser(0.1,20.4*effHists_def[iplot.second.front()]->GetMaximum());
-  //    
-  //  TLegend *leg = new TLegend(0.55, 0.9 - 0.1*iplot.second.size(), 0.95, 0.93);
-  //  for(auto hist : iplot.second) {
-  //    effHists_def[hist]->Draw("hist same");
-  //    if(includeHW) effHists_hw[hist]->Draw("hist same");
-  //    effHists_new_cond[hist]->Draw("hist same");
-  //    TString name(effHists_def[hist]->GetName());
-  //    TString nameHw(effHists_hw[hist]->GetName());
-  //    leg->AddEntry(effHists_def[hist], name + " (current)", "L");
-  //    if(includeHW) leg->AddEntry(effHists_hw[hist], name + " (hw)", "L");
-  //    leg->AddEntry(effHists_new_cond[hist], name + " (new)", "L"); 
-  //  }
-  //  leg->SetBorderSize(0);
-  //  leg->Draw();
-  //  
-  //  pad2.back()->cd();
-  //  effHistsRatio[iplot.second.front()]->Draw("hist");
-  //  // if(includeHW) effHistsRatio[iplot.second.front()]->GetYaxis()->SetTitle("Current/HW");
-  //  //else
-  //  effHistsRatio[iplot.second.front()]->GetYaxis()->SetTitle("New/Current");
-  //  for(auto hist : iplot.second) {
-  //    effHistsRatio[hist]->Draw("hist same");
-  //  }
-
-  //  //if(includeHW) canvases.back()->Print(Form("plots/%s_hw.pdf", iplot.first.c_str()));
-  //  //else
-  //  canvases.back()->SetLogx();
-  //  canvases.back()->Print(Form("plots/%s_emu.pdf", iplot.first.c_str()));
-  //}
-
- 
-
-  return 0;
+    std::vector<std::string> sumTypesPF = {"MET50_PF","MET100_PF","MET120_PF","MET150_PF"};
+    std::vector<std::string> sumTypesCalo = {"MET50_Calo","MET100_Calo","MET120_Calo","MET150_Calo"};
+
+    for (auto& [region, histos] : jetTypes) { thePlotter.plotEffs(histos, "RefmJet_", 5, jetXTitle, region); }
+
+    //-----------------------------------------------------------------------
+    // L1 ETM efficiencies
+    //-----------------------------------------------------------------------
+
+    thePlotter.plotEffs(sumTypesPF, "RefMET_PF", 10, pfMetXTitle);
+
+    thePlotter.plotEffs(sumTypesCalo, "RefMET_Calo", 10, caloMetXTitle);
+
+     //-----------------------------------------------------------------------
+     // L1 Jet resolution summary plots
+     //-----------------------------------------------------------------------
+    
+    
+    // // Jet resolution
+    std::vector<std::string> regions = {"Incl", "HE", "HB", "HE2", "HE1"}; 
+
+
+    for (auto& region : regions) { thePlotter.plotRes("hresJet_", "Jet", jetXTitle, region); }
+
+    //-----------------------------------------------------------------------
+    // L1 ETM resolution summary plots
+    //-----------------------------------------------------------------------
+    
+    thePlotter.plotRes("hResMET_Calo", "MET", caloMetXTitle);
+    thePlotter.plotRes("hResMET_PF", "MET", pfMetXTitle);
+
+    return 0;
 }
